@@ -67,16 +67,21 @@ class Sls implements LogHandlerInterface
      */
     public function save(array $log) : bool
     {
+        $log = $this->filterLogs($log);
+        
+        if (empty($log)) {
+            return false;
+        }
+        
         if ($this->config[ 'use_fc' ]) {
             if (isset($GLOBALS[ 'fcLogger' ])) {
                 return $this->fcLogger($log);
             }
-            else {
-                return false;
-            }
         }
         
-        $config = $this->config[ 'credentials' ] ?? [
+        $config  = $this->config[ 'credentials' ]
+          ? $this->config[ 'credentials' ]
+          : [
             'AccessKeyId'     => request()->server('context_credentials_accessKeyID'),
             'AccessKeySecret' => request()->server('context_credentials_accessKeySecret'),
             'endpoint'        => request()->server('context_region').'.sls.aliyuncs.com',//context_region.sls.aliyuncs.com
@@ -85,8 +90,27 @@ class Sls implements LogHandlerInterface
             'topic'           => request()->server('context_service_name'),// context_service_name
             'token'           => request()->server('context_credentials_securityToken'),
           ];
-        
         $logInfo = [];
+        $item    = ['source' => $this->config[ 'source' ]];
+        if (request()->server('context_function_name', '')) {
+            $item[ 'functionName' ] = request()->server('context_function_name', '');
+        }
+        if (request()->server('context_service_qualifier', '')) {
+            $item[ 'qualifier' ] = request()->server('context_service_qualifier', '');
+        }
+        if (request()->server('context_service_name', '')) {
+            $item[ 'serviceName' ] = request()->server('context_service_name', '');
+        }
+        if (request()->server('context_service_versionId', '')) {
+            $item[ 'versionId' ] = request()->server('context_service_versionId', '');
+        }
+        
+        $msgPre = (new \DateTime())->format('c');
+        
+        if (request()->server('context_requestId', '')) {
+            $msgPre .= ' '.(request()->server('context_requestId', ''));
+        }
+        
         foreach ($log as $type => $val) {
             $message = [];
             foreach ($val as $msg) {
@@ -98,44 +122,66 @@ class Sls implements LogHandlerInterface
                   $this->config[ 'json_options' ]
                 ) : $msg;
             }
-            $item = [
-              'message' => "[{$type}]".implode(';', $message),
-              'source'  => $this->config[ 'source' ],
-            ];
-            if (request()->server('context_function_name', '')) {
-                $item[ 'functionName' ] = request()->server('context_function_name', '');
-            }
-            if (request()->server('context_service_qualifier', '')) {
-                $item[ 'qualifier' ] = request()->server('context_service_qualifier', '');
-            }
-            if (request()->server('context_service_name', '')) {
-                $item[ 'serviceName' ] = request()->server('context_service_name', '');
-            }
-            if (request()->server('context_service_versionId', '')) {
-                $item[ 'versionId' ] = request()->server('context_service_versionId', '');
-            }
-            $logInfo[] = new LogItem($item);
+            $item[ 'message' ] = sprintf("%s [%s] %s", $msgPre, strtoupper($type), implode(';', $message));
+            $logInfo[]         = new LogItem($item);
         }
-    
+        
+        if (empty($logInfo)) {
+            return false;
+        }
         
         $putLogsRequest = new PutLogsRequest(
-          $config[ 'project' ],
-          $config[ 'logStore' ],
-          $config[ 'topic' ],
-          $config[ 'source' ],
-          $logInfo
+          $config[ 'project' ], $config[ 'logStore' ], $config[ 'topic' ], $this->config[ 'source' ], $logInfo
         );
         $client         = new Client(
-          $config[ 'endpoint' ],
-          $config[ 'AccessKeyId' ],
-          $config[ 'AccessKeySecret' ],
-          $config[ 'token' ] ?? ''
+          $config[ 'endpoint' ], $config[ 'AccessKeyId' ], $config[ 'AccessKeySecret' ], $config[ 'token' ] ?? ''
         );
-        $client->putLogs($putLogsRequest);
+        try {
+            $client->putLogs($putLogsRequest);
+        }
+        catch (\Exception $e) {
+            $this->throwSelfException($e);
+        }
         
         return true;
     }
     
+    /**
+     *
+     * 不记录自身的错误
+     *
+     * @param array $log
+     *
+     * @return array
+     */
+    protected function filterLogs(array $log) : array
+    {
+        return array_filter(
+          $log,
+          function ($item) {
+              return !is_string($item) || strpos($item, "[".self::class."::error]") === false;
+          }
+        );
+    }
+    
+    /**
+     *
+     * 抛出错误
+     *
+     * @param \Exception $exception
+     *
+     * @throws \Exception
+     */
+    protected function throwSelfException(\Exception $exception)
+    {
+        throw new \Exception("[".self::class."::error]".$exception->getMessage());
+    }
+    
+    /**
+     * @param array $log
+     *
+     * @return bool
+     */
     protected function fcLogger(array $log) : bool
     {
         $logger = $GLOBALS[ 'fcLogger' ];

@@ -26,11 +26,13 @@
               // 是否实时写入
             'realtime_write' => true,
             
-            'use_fc'         => false,//是否使用函数计算内置的 fcLogger，
-                                        //仅在cli模式下有效，若为true,则以下配置可不填
-                                        //参见[相关参考](#相关参考)
+            'use_fc'         => true,//是否使用函数计算内置的 fcLogger，
+            //仅在函数计算 php runtime cli模式下有效，若为true,则以下配置可不填
+            //若设置为true，但不在函数计算 cli模式下，会尝试使用日志服务 php SDK
+            //参见[相关参考](#相关参考)
             'source'         => 'think',//来源
-            'credentials'    => [//认证信息,false或array，若为false，则默认使用函数计算提供的context信息中的认证信息
+            'credentials'    => [//认证信息,false或array，若为false，则默认使用函数计算提供的context信息中的认证信息，
+                                 //如设置为false，且不在函数计算环境下，则不会写入日志
               'AccessKeyId'     => 'your_access_key_id',
               'AccessKeySecret' => 'your_access_key_secret',
               'endpoint'        => 'cn-beijing.sls.aliyuncs.com',//region.sls.aliyuncs.com
