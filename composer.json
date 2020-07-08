@@ -4,6 +4,7 @@
     "type": "library",
     "keywords": [
         "think-log-driver-sls",
+        "thinkphp",
         "函数计算",
         "log",
         "阿里云日志服务sls"

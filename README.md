@@ -59,6 +59,8 @@ FC Invoke Start RequestId: ca4ee7bc-9a4c-4297-9e77-54d1a3b079ea
 FC Invoke End RequestId: ca4ee7bc-9a4c-4297-9e77-54d1a3b079ea
 ```
 
+或者在 日志服务管理后台，打开对应的日志库，进行查询。
+
 ## 相关参考
 
 - [liuwave/fc-thinkphp](https://github.com/liuwave/fc-thinkphp)
