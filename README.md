@@ -44,6 +44,21 @@
 
 ``` 
 
+## 效果
+
+函数计算控制台->对应函数界面->日志查询->简单查询/高级查询,可以查询到日志记录：
+
+```
+FC Invoke Start RequestId: ca4ee7bc-9a4c-4297-9e77-54d1a3b079ea
+2020-07-08T19:54:44+08:00 ca4ee7bc-9a4c-4297-9e77-54d1a3b079ea [ERROR] 测试错误日志
+2020-07-08T19:54:44+08:00 ca4ee7bc-9a4c-4297-9e77-54d1a3b079ea [INFO] 测试信息日志
+2020-07-08T19:54:44+08:00 ca4ee7bc-9a4c-4297-9e77-54d1a3b079ea [WARNING] 测试警告日志
+2020-07-08T19:54:44+08:00 ca4ee7bc-9a4c-4297-9e77-54d1a3b079ea [ALERT] 测试测试alert日志
+2020-07-08T19:54:44+08:00 ca4ee7bc-9a4c-4297-9e77-54d1a3b079ea [DEBUG] 测试debug环境
+2020-07-08T19:54:44+08:00 ca4ee7bc-9a4c-4297-9e77-54d1a3b079ea [ERROR] [0]日志插件记录抛出异常测试,请在 函数计算控制台->对应函数界面->日志查询->高级查询中，查询日志结果
+FC Invoke End RequestId: ca4ee7bc-9a4c-4297-9e77-54d1a3b079ea
+```
+
 ## 相关参考
 
 - [liuwave/fc-thinkphp](https://github.com/liuwave/fc-thinkphp)
