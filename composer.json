@@ -1,0 +1,29 @@
+{
+    "name": "liuwave/think-log-driver-sls",
+    "description": "这是使用阿里云日志服务sls的thinkphp6.0日志驱动，支持函数计算",
+    "type": "library",
+    "keywords": [
+        "think-log-driver-sls",
+        "函数计算",
+        "log",
+        "阿里云日志服务sls"
+    ],
+    "homepage": "https://github.com/liuwave/think-log-driver-sls",
+    "require": {
+        "php": ">=7.2.0",
+        "topthink/framework": "^6.0.0",
+        "lokielse/aliyun-open-api-sls": "^1.0"
+    },
+    "license": "MIT",
+    "authors": [
+        {
+            "name": "liuwave",
+            "email": "liuwave@qq.com"
+        }
+    ],
+    "autoload": {
+        "psr-4": {
+            "liuwave\\think\\log\\driver\\": "src/"
+        }
+    }
+}
