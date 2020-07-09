@@ -13,6 +13,8 @@ namespace liuwave\think\log\driver;
 use Aliyun\SLS\Client;
 use Aliyun\SLS\Models\LogItem;
 use Aliyun\SLS\Requests\PutLogsRequest;
+use DateTime;
+use Exception;
 use think\App;
 use think\contract\LogHandlerInterface;
 
@@ -67,50 +69,29 @@ class Sls implements LogHandlerInterface
      */
     public function save(array $log) : bool
     {
-        $log = $this->filterLogs($log);
+        $messages = $this->parserLogs($log);
         
-        if (empty($log)) {
+        if (empty($messages)) {
             return false;
         }
         
-        if ($this->config[ 'use_fc' ]) {
-            if (isset($GLOBALS[ 'fcLogger' ])) {
-                return $this->fcLogger($log);
-            }
+        if ($this->config[ 'use_fc' ] && isset($GLOBALS[ 'fcLogger' ])) {
+            return $this->fcLogger($messages);
         }
         
-        $config  = $this->config[ 'credentials' ]
-          ? $this->config[ 'credentials' ]
-          : [
-            'AccessKeyId'     => request()->server('context_credentials_accessKeyID'),
-            'AccessKeySecret' => request()->server('context_credentials_accessKeySecret'),
-            'endpoint'        => request()->server('context_region').'.sls.aliyuncs.com',//context_region.sls.aliyuncs.com
-            'project'         => request()->server('context_service_logProject'),// context_service_logProject
-            'logStore'        => request()->server('context_service_logStore'),// context_service_logStore
-            'topic'           => request()->server('context_service_name'),// context_service_name
-            'token'           => request()->server('context_credentials_securityToken'),
-          ];
-        $logInfo = [];
-        $item    = ['source' => $this->config[ 'source' ]];
-        if (request()->server('context_function_name', '')) {
-            $item[ 'functionName' ] = request()->server('context_function_name', '');
-        }
-        if (request()->server('context_service_qualifier', '')) {
-            $item[ 'qualifier' ] = request()->server('context_service_qualifier', '');
-        }
-        if (request()->server('context_service_name', '')) {
-            $item[ 'serviceName' ] = request()->server('context_service_name', '');
-        }
-        if (request()->server('context_service_versionId', '')) {
-            $item[ 'versionId' ] = request()->server('context_service_versionId', '');
-        }
+        return $this->sdkLogger($messages);
+    }
+    
+    protected function parserLogs(array $log) : array
+    {
+        $log = array_filter(
+          $log,
+          function ($item) {
+              return !is_string($item) || strpos($item, "[".self::class."::error]") === false;
+          }
+        );
         
-        $msgPre = (new \DateTime())->format('c');
-        
-        if (request()->server('context_requestId', '')) {
-            $msgPre .= ' '.(request()->server('context_requestId', ''));
-        }
-        
+        $messages = [];
         foreach ($log as $type => $val) {
             $message = [];
             foreach ($val as $msg) {
@@ -122,46 +103,13 @@ class Sls implements LogHandlerInterface
                   $this->config[ 'json_options' ]
                 ) : $msg;
             }
-            $item[ 'message' ] = sprintf("%s [%s] %s", $msgPre, strtoupper($type), implode(';', $message));
-            $logInfo[]         = new LogItem($item);
+            $messages[] = [
+              'type'    => $type,
+              'message' => implode(';', $message),
+            ];
         }
         
-        if (empty($logInfo)) {
-            return false;
-        }
-        
-        $putLogsRequest = new PutLogsRequest(
-          $config[ 'project' ], $config[ 'logStore' ], $config[ 'topic' ], $this->config[ 'source' ], $logInfo
-        );
-        $client         = new Client(
-          $config[ 'endpoint' ], $config[ 'AccessKeyId' ], $config[ 'AccessKeySecret' ], $config[ 'token' ] ?? ''
-        );
-        try {
-            $client->putLogs($putLogsRequest);
-        }
-        catch (\Exception $e) {
-            $this->throwSelfException($e);
-        }
-        
-        return true;
-    }
-    
-    /**
-     *
-     * 不记录自身的错误
-     *
-     * @param array $log
-     *
-     * @return array
-     */
-    protected function filterLogs(array $log) : array
-    {
-        return array_filter(
-          $log,
-          function ($item) {
-              return !is_string($item) || strpos($item, "[".self::class."::error]") === false;
-          }
-        );
+        return $messages;
     }
     
     /**
@@ -172,37 +120,79 @@ class Sls implements LogHandlerInterface
      *
      * @throws \Exception
      */
-    protected function throwSelfException(\Exception $exception)
+    protected function throwSelfException(Exception $exception)
     {
-        throw new \Exception("[".self::class."::error]".$exception->getMessage());
+        throw new Exception("[".self::class."::error]".$exception->getMessage());
     }
     
     /**
-     * @param array $log
+     * @param array $messages
+     *
+     * @return bool
+     * @throws \Exception
+     */
+    protected function sdkLogger(array $messages) : bool
+    {
+        $item = [];
+        if (!empty($this->config[ 'source' ])) {
+            $item[ 'source' ] = $this->config[ 'source' ];
+        }
+        //判断是否为 函数计算环境
+        if (getenv('FC_SERVER_PATH')) {
+            $item[ 'qualifier' ]    = getenv('FC_QUALIFIER') ? : '';
+            $item[ 'functionName' ] = request()->server('context_function_name') ? : '';
+            $item[ 'serviceName' ]  = request()->server('context_service_name');
+            $item[ 'versionId' ]    = request()->server('context_service_versionId');
+        }
+        
+        $msgPre = ((new DateTime())->format('c')).' '.(request()->server('context_requestId'));
+        
+        $logInfo = array_map(
+          function ($message) use ($msgPre) {
+              $item[ 'message' ] = sprintf("%s [%s] %s", $msgPre, strtoupper($message[ 'type' ]), $message[ 'message' ]);
+              
+              return new LogItem($item);
+          },
+          $messages
+        );
+        
+        $config = $this->config[ 'credentials' ]
+          ? : [
+            'AccessKeyId'     => getenv('accessKeyID') ? : '',
+            'AccessKeySecret' => getenv('accessKeySecret') ? : '',
+            'endpoint'        => request()->server('context_region').'.sls.aliyuncs.com',//context_region.sls.aliyuncs.com
+            'project'         => request()->server('context_service_logProject'),// context_service_logProject
+            'logStore'        => request()->server('context_service_logStore'),// context_service_logStore
+            'topic'           => getenv('topic') ? : '',
+            'token'           => getenv('securityToken') ? : "",
+          ];
+        
+        try {
+            (new Client(
+              $config[ 'endpoint' ], $config[ 'AccessKeyId' ], $config[ 'AccessKeySecret' ], $config[ 'token' ] ?? ''
+            ))->putLogs(
+              new PutLogsRequest(
+                $config[ 'project' ], $config[ 'logStore' ], $config[ 'topic' ], $this->config[ 'source' ], $logInfo
+              )
+            );
+        }
+        catch (Exception $e) {
+            $this->throwSelfException($e);
+        }
+        
+        return true;
+    }
+    
+    /**
+     * @param array $messages
      *
      * @return bool
      */
-    protected function fcLogger(array $log) : bool
+    protected function fcLogger(array $messages) : bool
     {
-        $logger = $GLOBALS[ 'fcLogger' ];
-        foreach ($log as $type => $val) {
-            $message = [];
-            foreach ($val as $msg) {
-                if (!is_string($msg)) {
-                    $msg = var_export($msg, true);
-                }
-                $message[] = $this->config[ 'json' ] ? json_encode(
-                  ['msg' => $msg],
-                  $this->config[ 'json_options' ]
-                ) : $msg;
-            }
-            $info = implode(';', $message);
-            if (method_exists($logger, $type)) {
-                $logger->$type($info);
-            }
-            else {
-                $logger->info($info);
-            }
+        foreach ($messages as $message) {
+            $type = method_exists($GLOBALS[ 'fcLogger' ], $message[ 'type' ]) ? $message[ 'type' ] : 'info';
+            $GLOBALS[ 'fcLogger' ]->$type($message[ 'message' ]);
         }
         
         return true;
