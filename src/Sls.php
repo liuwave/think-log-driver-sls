@@ -14,6 +14,7 @@ use Aliyun\SLS\Client;
 use Aliyun\SLS\Models\LogItem;
 use Aliyun\SLS\Requests\PutLogsRequest;
 use DateTime;
+use DateTimeZone;
 use Exception;
 use think\App;
 use think\contract\LogHandlerInterface;
@@ -82,8 +83,14 @@ class Sls implements LogHandlerInterface
         return $this->sdkLogger($messages);
     }
     
+    /**
+     * @param array $log
+     *
+     * @return array
+     */
     protected function parserLogs(array $log) : array
     {
+        //过滤 自身抛出的异常
         $log = array_filter(
           $log,
           function ($item) {
@@ -133,22 +140,20 @@ class Sls implements LogHandlerInterface
      */
     protected function sdkLogger(array $messages) : bool
     {
-        $item = [];
-        if (!empty($this->config[ 'source' ])) {
-            $item[ 'source' ] = $this->config[ 'source' ];
-        }
+        $item   = [];
+        $msgPre = ((new DateTime('now', (new DateTimeZone('UTC'))))->format("Y-m-d\TH:i:s\Z"));
         //判断是否为 函数计算环境
         if (getenv('FC_SERVER_PATH')) {
+            $item[ 'requestId' ]    = request()->server('context_requestId');
+            $msgPre                 .= $item[ 'requestId' ] ? ' '.$item[ 'requestId' ] : '';
             $item[ 'qualifier' ]    = getenv('FC_QUALIFIER') ? : '';
             $item[ 'functionName' ] = request()->server('context_function_name') ? : '';
             $item[ 'serviceName' ]  = request()->server('context_service_name');
             $item[ 'versionId' ]    = request()->server('context_service_versionId');
         }
         
-        $msgPre = ((new DateTime())->format('c')).' '.(request()->server('context_requestId'));
-        
         $logInfo = array_map(
-          function ($message) use ($msgPre) {
+          function ($message) use ($msgPre, $item) {
               $item[ 'message' ] = sprintf("%s [%s] %s", $msgPre, strtoupper($message[ 'type' ]), $message[ 'message' ]);
               
               return new LogItem($item);
